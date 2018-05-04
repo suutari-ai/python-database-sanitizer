@@ -10,15 +10,28 @@ https://www.postgresql.org/docs/9.2/static/sql-copy.html
 
 from __future__ import unicode_literals
 
-import six
+import re
 import string
 
+import six
 
 #: Representation of NULL value in Postgres COPY statement.
 POSTGRES_COPY_NULL_VALUE = "\\N"
 
 
+DECODE_REGEX = re.compile(r'\\(?:[0-7]{1,3}|x[0-9a-fA-F]{1,2}|.|$)')
+ENCODE_REGEX = re.compile('(?:\\\\|\b|\f|\n|\r|\t|\v)')
+
+
 def decode_copy_value(value):
+    # Test for null values first.
+    if value == POSTGRES_COPY_NULL_VALUE:
+        return None
+
+    return DECODE_REGEX.sub(_decode_copy_value, value)
+
+
+def _decode_copy_value(match):
     """
     Decodes value received as part of Postgres `COPY` command.
 
@@ -29,9 +42,7 @@ def decode_copy_value(value):
              escape sequences have been decoded from.
     :rtype: str|None
     """
-    # Test for null values first.
-    if value == POSTGRES_COPY_NULL_VALUE:
-        return None
+    value = match.group(0)
 
     index = 0
     length = len(value)
@@ -95,6 +106,13 @@ def decode_copy_value(value):
 
 
 def encode_copy_value(value):
+    if value is None:
+        return POSTGRES_COPY_NULL_VALUE
+
+    return ENCODE_REGEX.sub(_encode_copy_value, value)
+
+
+def _encode_copy_value(match):
     """
     Encodes given value into format suitable for Postgres `COPY` statement.
 
@@ -105,8 +123,7 @@ def encode_copy_value(value):
              `COPY` command.
     :rtype: str
     """
-    if value is None:
-        return POSTGRES_COPY_NULL_VALUE
+    value = match.group(0)
 
     index = 0
     length = len(value)
