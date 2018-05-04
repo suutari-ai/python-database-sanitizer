@@ -47,7 +47,6 @@ def sanitize(url, config):
         stdout=subprocess.PIPE,
     )
 
-    sanitize_values = None
     current_table = None
     current_table_columns = None
 
@@ -64,18 +63,22 @@ def sanitize(url, config):
                 yield "\\."
                 continue
 
-            if not sanitize_values:
-                yield line
-                continue
-
             # Otherwise we have a line containing column values. It's time to
             # parse and sanitize them.
             unsanitized_values = parse_values(line)
+            sanitized_values = []
 
             if len(unsanitized_values) != len(current_table_columns):
                 raise ValueError("Mismatch between column names and values.")
 
-            sanitized_values = sanitize_values(unsanitized_values)
+            for index, value in enumerate(unsanitized_values):
+                if config:
+                    value = config.sanitize(
+                        table_name=current_table,
+                        column_name=current_table_columns[index],
+                        value=value,
+                    )
+                sanitized_values.append(value)
 
             # Convert sanitized values back into column values.
             yield "\t".join(encode_copy_value(value) for value in sanitized_values)
@@ -90,39 +93,7 @@ def sanitize(url, config):
         current_table = copy_line_match.group("table")
         current_table_columns = parse_column_names(copy_line_match.group("columns"))
 
-        sanitize_values = get_sanitizer(
-            config, current_table, current_table_columns)
-
         yield line
-
-
-def get_sanitizer(config, table, columns):
-    if not config:
-        return None
-
-    sanitizers = [
-        config.get_sanitizer_for(table, field)
-        for field in columns
-    ]
-
-    if not any(sanitizers):
-        return None
-
-    sanitizers_or_identities = [
-        (sanitizer or _identity) for sanitizer in sanitizers
-    ]
-
-    def sanitize_values(values):
-        return [
-            sanitizer(value)
-            for (sanitizer, value) in zip(sanitizers_or_identities, values)
-        ]
-
-    return sanitize_values
-
-
-def _identity(x):
-    return x
 
 
 def parse_column_names(text):
